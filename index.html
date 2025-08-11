@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cronómetro Popper Rutina</title>
+<!-- iOS: abrir como app a pantalla completa al añadir a inicio -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Cronómetro Popper" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Crect width='100%25' height='100%25' fill='%23f4f4f4'/%3E%3Ctext x='50%25' y='55%25' font-size='64' text-anchor='middle' fill='%23006600' font-family='Arial'%3E⏱%3C/text%3E%3C/svg%3E" />
+<style>
+  :root { --iron-bg:#ffdddd; --iron-fg:#b30000; --ams-bg:#ddffdd; --ams-fg:#006600; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; text-align: center; background:#f4f4f4; margin:0; padding: 10px; }
+  h1 { font-size: 7vw; margin: 10px 0 0; }
+  #timer { font-size: 12vw; margin: 12px 0; font-variant-numeric: tabular-nums; }
+  #message { font-size: 6vw; margin: 12px auto; padding: 10px; border-radius: 12px; max-width: 900px; }
+  .iron { background: var(--iron-bg); color: var(--iron-fg); }
+  .amsterdam { background: var(--ams-bg); color: var(--ams-fg); }
+  #countdown { font-size: 5vw; margin: 6px 0 14px; }
+  .controls { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-bottom:10px; }
+  button { padding: 14px 20px; font-size: 5.5vw; border-radius: 10px; border: none; background:#222; color:#fff; cursor:pointer; }
+  button.secondary { background:#666; }
+  label { display:inline-flex; align-items:center; gap:8px; font-size:4.5vw; }
+  input[type="checkbox"] { transform: scale(1.4); }
+  @media (min-width: 768px){
+    h1{font-size:40px} #timer{font-size:72px} #message{font-size:32px}
+    #countdown{font-size:24px} button{font-size:20px} label{font-size:18px}
+  }
+</style>
+</head>
+<body>
+  <h1>Rutina Popper</h1>
+  <div id="timer">00:00</div>
+  <div id="message">Pulsa iniciar para comenzar</div>
+  <div id="countdown"></div>
+
+  <div class="controls">
+    <button id="startBtn">Iniciar rutina</button>
+    <button id="resetBtn" class="secondary">Reiniciar</button>
+    <label><input type="checkbox" id="soundToggle" checked /> Sonido</label>
+  </div>
+
+  <audio id="alertSound" preload="auto">
+    <source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg" />
+  </audio>
+
+<script>
+// Tiempos en segundos siguiendo tu rutina clara
+const routine = [
+  { t: 0,    text: 'Iron Fist Raw: inhalación corta (1–2 seg)', cls: 'iron' },
+  { t: 90,   text: 'Amsterdam NF: inhalación corta', cls: 'amsterdam' },
+  { t: 210,  text: 'Amsterdam NF: inhalación corta', cls: 'amsterdam' },
+  { t: 330,  text: 'Amsterdam NF: inhalación corta', cls: 'amsterdam' },
+  { t: 450,  text: 'Amsterdam NF: inhalación corta', cls: 'amsterdam' },
+  { t: 600,  text: 'Iron Fist Raw: inhalación corta (reimpulso)', cls: 'iron' },
+  { t: 720,  text: 'Amsterdam NF: inhalación corta', cls: 'amsterdam' },
+  { t: 840,  text: 'Amsterdam NF: inhalación corta', cls: 'amsterdam' },
+  { t: 960,  text: 'Amsterdam NF: inhalación corta', cls: 'amsterdam' },
+  { t: 1200, text: 'Iron Fist Raw: inhalación corta (reimpulso)', cls: 'iron' },
+  { t: 9999, text: 'Seguir: Amsterdam cada 2–3 min, Iron Fist cada 10–15 min', cls: 'amsterdam' }
+];
+
+let startEpoch = null; // ms
+let timerId = null;
+let lastIndex = -1;
+const timerEl = document.getElementById('timer');
+const msgEl = document.getElementById('message');
+const cdEl = document.getElementById('countdown');
+const beep = document.getElementById('alertSound');
+const startBtn = document.getElementById('startBtn');
+const resetBtn = document.getElementById('resetBtn');
+const soundToggle = document.getElementById('soundToggle');
+
+function fmt(sec){ const m = String(Math.floor(sec/60)).padStart(2,'0'); const s = String(sec%60).padStart(2,'0'); return `${m}:${s}`; }
+
+function primeAudio(){
+  // "Desbloquear" audio en iOS: reproducir y pausar inmediatamente tras interacción del usuario
+  if (!beep) return;
+  const p = beep.play();
+  if (p && typeof p.then === 'function') {
+    p.then(() => { beep.pause(); beep.currentTime = 0; }).catch(()=>{});
+  }
+}
+
+function setPhase(idx, elapsed){
+  if (idx === lastIndex) return;
+  lastIndex = idx;
+  const phase = routine[idx];
+  msgEl.textContent = phase.text;
+  msgEl.className = phase.cls;
+  if (soundToggle.checked) {
+    // intenta sonar; si falla, seguimos sin bloquear
+    beep.currentTime = 0; beep.play().catch(()=>{});
+  }
+  // countdown a la siguiente fase
+  if (idx < routine.length - 1) {
+    const nextT = routine[idx+1].t - elapsed;
+    if (nextT > 0) cdEl.textContent = `Siguiente en: ${fmt(nextT)}`; else cdEl.textContent = '';
+  } else {
+    cdEl.textContent = '';
+  }
+}
+
+function tick(){
+  const elapsed = Math.floor((Date.now() - startEpoch)/1000);
+  timerEl.textContent = fmt(elapsed);
+  // encontrar fase actual
+  let idx = 0;
+  for (let i=0;i<routine.length;i++){ if (elapsed >= routine[i].t) idx = i; else break; }
+  setPhase(idx, elapsed);
+}
+
+function startRoutine(){
+  primeAudio();
+  startEpoch = Date.now();
+  lastIndex = -1;
+  if (timerId) clearInterval(timerId);
+  tick();
+  timerId = setInterval(tick, 500);
+}
+
+function resetRoutine(){
+  if (timerId) clearInterval(timerId);
+  startEpoch = null; lastIndex = -1;
+  timerEl.textContent = '00:00';
+  msgEl.textContent = 'Pulsa iniciar para comenzar';
+  msgEl.className = '';
+  cdEl.textContent = '';
+}
+
+startBtn.addEventListener('click', startRoutine, { passive: true });
+resetBtn.addEventListener('click', resetRoutine, { passive: true });
+</script>
+</body>
+</html>
